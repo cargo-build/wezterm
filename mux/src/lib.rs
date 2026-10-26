@@ -792,9 +792,10 @@ impl Mux {
         let downloader: Arc<dyn DownloadHandler> = Arc::new(MuxDownloader {});
         pane.set_download_handler(&downloader);
 
+        let reader = pane.reader()?;
         self.panes.write().insert(pane.pane_id(), Arc::clone(pane));
         let pane_id = pane.pane_id();
-        if let Some(reader) = pane.reader()? {
+        if let Some(reader) = reader {
             let banner = self.banner.read().clone();
             let pane = Arc::downgrade(pane);
             thread::spawn(move || read_from_pane_pty(pane, banner, reader));

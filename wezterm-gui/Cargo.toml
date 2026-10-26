@@ -11,6 +11,7 @@ publish = false
 
 [features]
 default = ["vendored-fonts", "wayland"]
+io-uring = ["portable-pty/io-uring"]
 wayland = ["window/wayland"]
 distro-defaults = ["config/distro-defaults"]
 vendor-nerd-font-symbols-font = ["wezterm-font/vendor-nerd-font-symbols"]

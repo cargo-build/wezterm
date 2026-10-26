@@ -2,6 +2,8 @@
 
 use crate::{Child, CommandBuilder, MasterPty, PtyPair, PtySize, PtySystem, SlavePty};
 use anyhow::{bail, Error};
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+use anyhow::Context;
 use filedescriptor::FileDescriptor;
 use libc::{self, winsize};
 use std::cell::RefCell;
@@ -15,6 +17,16 @@ use std::path::PathBuf;
 use std::{io, mem, ptr};
 
 pub use std::os::unix::io::RawFd;
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+mod uring;
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+use uring::PtyStream;
+#[cfg(not(all(target_os = "linux", feature = "io-uring")))]
+type PtyStream = PtyFd;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Default)]
 pub struct UnixPtySystem {}
@@ -92,7 +104,12 @@ impl std::ops::DerefMut for PtyFd {
 
 impl Read for PtyFd {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        match self.0.read(buf) {
+        pty_read_result(self.0.read(buf))
+    }
+}
+
+fn pty_read_result(result: io::Result<usize>) -> io::Result<usize> {
+        match result {
             Err(ref e) if e.raw_os_error() == Some(libc::EIO) => {
                 // EIO indicates that the slave pty has been closed.
                 // Treat this as EOF so that std::io::Read::read_to_string
@@ -102,7 +119,13 @@ impl Read for PtyFd {
             }
             x => x,
         }
-    }
+}
+
+fn clone_stream(fd: &PtyFd) -> anyhow::Result<PtyStream> {
+    let fd = PtyFd(fd.try_clone()?);
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    let fd = PtyStream::new(fd).context("initializing io_uring PTY I/O")?;
+    Ok(fd)
 }
 
 fn tty_name(fd: RawFd) -> Option<PathBuf> {
@@ -350,7 +373,7 @@ impl MasterPty for UnixMasterPty {
     }
 
     fn try_clone_reader(&self) -> Result<Box<dyn Read + Send>, Error> {
-        let fd = PtyFd(self.fd.try_clone()?);
+        let fd = clone_stream(&self.fd)?;
         Ok(Box::new(fd))
     }
 
@@ -358,8 +381,8 @@ impl MasterPty for UnixMasterPty {
         if *self.took_writer.borrow() {
             anyhow::bail!("cannot take writer more than once");
         }
+        let fd = clone_stream(&self.fd)?;
         *self.took_writer.borrow_mut() = true;
-        let fd = PtyFd(self.fd.try_clone()?);
         Ok(Box::new(UnixMasterWriter { fd }))
     }
 
@@ -387,18 +410,18 @@ impl MasterPty for UnixMasterPty {
 /// EOT will be sent, and then the file descriptor will be closed when
 /// the Pty is dropped.
 struct UnixMasterWriter {
-    fd: PtyFd,
+    fd: PtyStream,
 }
 
 impl Drop for UnixMasterWriter {
     fn drop(&mut self) {
         let mut t: libc::termios = unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
-        if unsafe { libc::tcgetattr(self.fd.0.as_raw_fd(), &mut t) } == 0 {
+        if unsafe { libc::tcgetattr(self.fd.as_raw_fd(), &mut t) } == 0 {
             // EOF is only interpreted after a newline, so if it is set,
             // we send a newline followed by EOF.
             let eot = t.c_cc[libc::VEOF];
             if eot != 0 {
-                let _ = self.fd.0.write_all(&[b'\n', eot]);
+                let _ = self.fd.write_all(&[b'\n', eot]);
             }
         }
     }

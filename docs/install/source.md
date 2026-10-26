@@ -42,6 +42,30 @@ $ cargo run --release --bin wezterm -- start
 **If you get an error about zlib then you most likely didn't initialize the submodules;
 take a closer look at the instructions!**
 
+### Optional Linux PTY io_uring support
+
+The default build uses the existing native PTY I/O. On Linux, `io-uring` selects
+completion-based reads and writes for local PTYs while retaining the existing
+terminal parser, renderer and blocking reader/writer interfaces:
+
+```console
+$ cargo build --release -p wezterm-gui --features io-uring
+$ cargo build --release -p wezterm-mux-server --features io-uring
+$ cargo build --release -p wezterm --features io-uring
+```
+
+The feature adds to the GUI's existing Wayland and font defaults; disabling
+default features is unnecessary. It must be enabled in the process that owns
+the PTY, including a separate mux server when one is used. SSH, serial ports and
+remote mux transports retain their existing implementations.
+
+This option requires Linux 5.6 or newer with io_uring permitted by the host's
+security policy. Initialization failures are reported without falling back to
+native PTY I/O. On other operating systems, the feature retains native PTY I/O
+and does not build the Linux dependency. The adapter uses independent rings for
+input and output and retains the current per-pane threads; no performance gain
+is implied.
+
 ### Building without Wayland support on Unix systems
 
 By default, support for both X11 and Wayland is included on Unix systems.

@@ -21,7 +21,11 @@ shell-words.workspace = true
 
 [features]
 default = []
+io-uring = ["dep:io-uring"]
 serde_support = ["serde"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = { workspace = true, optional = true }
 
 [target."cfg(windows)".dependencies]
 bitflags.workspace = true
