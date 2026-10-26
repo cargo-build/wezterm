@@ -615,8 +615,8 @@ impl Domain for LocalDomain {
             },
             self.name
         );
-        let child_result = pair.slave.spawn_command(cmd);
         let mut writer = WriterWrapper::new(pair.master.take_writer()?);
+        let child_result = pair.slave.spawn_command(cmd);
 
         let mut terminal = wezterm_term::Terminal::new(
             size,
