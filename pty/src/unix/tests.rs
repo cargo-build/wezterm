@@ -26,9 +26,16 @@ fn reads_output_until_slave_closes() -> anyhow::Result<()> {
     let producer = thread::spawn(move || slave.fd.write_all(&sent));
     let mut received = Vec::new();
     reader.read_to_end(&mut received)?;
-    assert_eq!(reader.read(&mut [0])?, 0, "a closed slave must continue reporting EOF");
+    assert_eq!(
+        reader.read(&mut [0])?,
+        0,
+        "a closed slave must continue reporting EOF"
+    );
     producer.join().expect("PTY output producer panicked")?;
-    assert_eq!(received, expected, "PTY output must drain intact before EOF");
+    assert_eq!(
+        received, expected,
+        "PTY output must drain intact before EOF"
+    );
     Ok(())
 }
 
@@ -87,7 +94,10 @@ fn empty_buffers_do_not_wait_for_data() -> anyhow::Result<()> {
 fn writer_can_only_be_taken_once() -> anyhow::Result<()> {
     let (master, _slave) = raw_pty()?;
     let _writer = master.take_writer()?;
-    assert!(master.take_writer().is_err(), "a second writer must be rejected");
+    assert!(
+        master.take_writer().is_err(),
+        "a second writer must be rejected"
+    );
     Ok(())
 }
 
@@ -101,7 +111,11 @@ fn resize_preserves_terminal_dimensions() -> anyhow::Result<()> {
         pixel_height: 656,
     };
     master.resize(size)?;
-    assert_eq!(master.get_size()?, size, "PTY size must include pixel dimensions");
+    assert_eq!(
+        master.get_size()?,
+        size,
+        "PTY size must include pixel dimensions"
+    );
     Ok(())
 }
 

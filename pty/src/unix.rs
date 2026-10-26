@@ -1,9 +1,9 @@
 //! Working with pseudo-terminals
 
 use crate::{Child, CommandBuilder, MasterPty, PtyPair, PtySize, PtySystem, SlavePty};
-use anyhow::{bail, Error};
 #[cfg(all(target_os = "linux", feature = "io-uring"))]
 use anyhow::Context;
+use anyhow::{bail, Error};
 use filedescriptor::FileDescriptor;
 use libc::{self, winsize};
 use std::cell::RefCell;
@@ -109,16 +109,16 @@ impl Read for PtyFd {
 }
 
 fn pty_read_result(result: io::Result<usize>) -> io::Result<usize> {
-        match result {
-            Err(ref e) if e.raw_os_error() == Some(libc::EIO) => {
-                // EIO indicates that the slave pty has been closed.
-                // Treat this as EOF so that std::io::Read::read_to_string
-                // and similar functions gracefully terminate when they
-                // encounter this condition
-                Ok(0)
-            }
-            x => x,
+    match result {
+        Err(ref e) if e.raw_os_error() == Some(libc::EIO) => {
+            // EIO indicates that the slave pty has been closed.
+            // Treat this as EOF so that std::io::Read::read_to_string
+            // and similar functions gracefully terminate when they
+            // encounter this condition
+            Ok(0)
         }
+        x => x,
+    }
 }
 
 fn clone_stream(fd: &PtyFd) -> anyhow::Result<PtyStream> {

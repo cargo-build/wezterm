@@ -28,9 +28,13 @@ impl PtyStream {
         let ring = IoUring::builder().dontfork().build(8)?;
         let mut probe = Probe::new();
         ring.submitter().register_probe(&mut probe)?;
-        if ![opcode::Read::CODE, opcode::Write::CODE, opcode::AsyncCancel::CODE]
-            .iter()
-            .all(|opcode| probe.is_supported(*opcode))
+        if ![
+            opcode::Read::CODE,
+            opcode::Write::CODE,
+            opcode::AsyncCancel::CODE,
+        ]
+        .iter()
+        .all(|opcode| probe.is_supported(*opcode))
         {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -49,7 +53,9 @@ impl PtyStream {
     }
 
     fn inner(&mut self) -> &mut Inner {
-        self.inner.as_mut().expect("PTY stream owns its state until drop")
+        self.inner
+            .as_mut()
+            .expect("PTY stream owns its state until drop")
     }
 }
 
@@ -62,7 +68,10 @@ impl Inner {
             ));
         }
         let length32 = u32::try_from(length).map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidInput, "PTY I/O buffer exceeds u32::MAX")
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "PTY I/O buffer exceeds u32::MAX",
+            )
         })?;
         self.buffer.resize(length, 0);
         Ok(length32)
@@ -71,7 +80,9 @@ impl Inner {
     fn execute(&mut self, entry: squeue::Entry) -> io::Result<usize> {
         loop {
             match self.issue(&entry) {
-                Err(error) if !self.failed && error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) if !self.failed && error.kind() == io::ErrorKind::Interrupted => {
+                    continue
+                }
                 result => return result,
             }
         }
@@ -83,7 +94,10 @@ impl Inner {
         // alive until the target completion, or are retained by PtyStream::drop.
         if unsafe { self.ring.submission().push(entry) }.is_err() {
             self.pending = false;
-            return Err(io::Error::new(io::ErrorKind::Other, "PTY submission queue is full"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "PTY submission queue is full",
+            ));
         }
         loop {
             if let Some(completion) = self.ring.completion().next() {
@@ -116,9 +130,8 @@ impl Inner {
             .build()
             .user_data(CANCEL_REQUEST);
         // SAFETY: cancellation contains only a request identifier, no borrowed memory.
-        unsafe { self.ring.submission().push(&cancel) }.map_err(|_| {
-            io::Error::new(io::ErrorKind::Other, "PTY cancellation queue is full")
-        })?;
+        unsafe { self.ring.submission().push(&cancel) }
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "PTY cancellation queue is full"))?;
         let mut cancel_pending = true;
         while self.pending || cancel_pending {
             for completion in self.ring.completion() {
@@ -143,7 +156,11 @@ impl Inner {
 
 impl AsRawFd for PtyStream {
     fn as_raw_fd(&self) -> RawFd {
-        self.inner.as_ref().expect("PTY stream owns its descriptor until drop").fd.as_raw_fd()
+        self.inner
+            .as_ref()
+            .expect("PTY stream owns its descriptor until drop")
+            .fd
+            .as_raw_fd()
     }
 }
 
@@ -225,8 +242,14 @@ mod tests {
         unsafe { inner.ring.submission().push(&entry) }?;
         inner.ring.submit()?;
         inner.cancel_pending()?;
-        assert!(!inner.pending, "the read must finish before its buffer can be reused");
-        assert!(inner.ring.completion().next().is_none(), "both completions must be drained");
+        assert!(
+            !inner.pending,
+            "the read must finish before its buffer can be reused"
+        );
+        assert!(
+            inner.ring.completion().next().is_none(),
+            "both completions must be drained"
+        );
         inner.prepare(READ_BUFFER_SIZE)?;
         Ok(())
     }
