@@ -474,7 +474,7 @@ impl ThreadedWriter {
             while let Ok(msg) = receiver.recv() {
                 match msg {
                     WriterMessage::Data(buf) => {
-                        if writer.write(&buf).is_err() {
+                        if writer.write_all(&buf).is_err() {
                             break;
                         }
                     }
@@ -2882,5 +2882,50 @@ impl TerminalState {
             .last()
             .copied()
             .unwrap_or(self.keyboard_encoding)
+    }
+}
+
+#[cfg(test)]
+mod threaded_writer_tests {
+    use super::ThreadedWriter;
+    use std::io::{self, Write};
+    use std::sync::mpsc::{self, Sender};
+    use std::time::Duration;
+
+    struct PartialWriter {
+        bytes: Vec<u8>,
+        flushed: Sender<Vec<u8>>,
+    }
+
+    impl Write for PartialWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            let count = bytes.len().min(7);
+            self.bytes.extend_from_slice(&bytes[..count]);
+            Ok(count)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushed
+                .send(std::mem::take(&mut self.bytes))
+                .map_err(|error| io::Error::new(io::ErrorKind::BrokenPipe, error))
+        }
+    }
+
+    #[test]
+    fn queued_input_survives_partial_writes() -> anyhow::Result<()> {
+        let (sender, receiver) = mpsc::channel();
+        let mut writer = ThreadedWriter::new(Box::new(PartialWriter {
+            bytes: Vec::new(),
+            flushed: sender,
+        }));
+        let input = b"a queued terminal paste".repeat(128);
+        writer.write_all(&input)?;
+        writer.flush()?;
+        let received = receiver.recv_timeout(Duration::from_secs(5))?;
+        assert_eq!(
+            received, input,
+            "the writer must deliver the complete queued message"
+        );
+        Ok(())
     }
 }
